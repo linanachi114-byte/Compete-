@@ -80,8 +80,8 @@ class BattleResult(BaseModel):
     character_b: Character
     events: List[TurnEvent]
     winner: str = Field(..., description="胜方名字，平局为 '平局'")
-    source: Literal["claude", "mock"] = Field(
-        ..., description="角色属性来源：claude=联网生成，mock=本地兜底"
+    source: Literal["claude", "deepseek", "mock"] = Field(
+        ..., description="角色属性来源：claude/deepseek=联网生成，mock=本地兜底"
     )
     intro: str = Field(default="", description="开场白")
 
@@ -146,7 +146,7 @@ class AdventureStartResponse(BaseModel):
     enemies: List[Character] = Field(..., description="三层敌人，按层数从弱到强")
     arena: str = Field(default="", description="实际使用的挑战场地")
     intro: str = Field(default="", description="试炼登场介绍")
-    source: Literal["claude", "mock"] = Field(..., description="生成来源")
+    source: Literal["claude", "deepseek", "mock"] = Field(..., description="生成来源")
 
 
 class BattleState(BaseModel):

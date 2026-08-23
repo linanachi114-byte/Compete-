@@ -1,60 +1,67 @@
-"""比赛存档 + 排行榜聚合（移植自 compete! 项目）。
-
-存档：每场比赛存为 backend/data/matches/{id}.json，零依赖、易迁移。
-所有三种模式（名字对战、试炼之塔、故事对决）的胜负结果都可入库，
-排行榜按角色名累加各方面胜负数据，给出 4 类榜单。
-
-存档结构（统一）：
-{
-  "id": "短 hex",
-  "created_at": "ISO 8601",
-  "mode": "battle|tower|story",
-  "protagonist": {"name": "...", "source": "...", "summary": "..."},
-  "antagonist":  {"name": "...", "source": "...", "summary": "..."},
-  "rounds": [{"round_number":1,"winner":"protagonist","winner_name":"...","narration":"..."}],
-  "final_score": {"protagonist":2, "antagonist":1},
-  "champion": "protagonist|antagonist",
-  "champion_name": "..."
-}
-
-「大场次」= 一整场胜负；「小场次」= 单回合胜负。
-"""
 from __future__ import annotations
 
 import json
-import threading
+import os
 import uuid
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-_DATA_DIR = Path(__file__).resolve().parent / "data" / "matches"
-_LOCK = threading.Lock()
+import psycopg
 
-MIN_MATCHES_FOR_RATE = 1  # 至少打过 1 场即上胜率榜
+DATABASE_URL = os.getenv("DATABASE_URL", "postgres://postgres@127.0.0.1:54329/yichui")
+_DATA_DIR = Path(__file__).resolve().parent / "data" / "matches"
+
+MIN_MATCHES_FOR_RATE = 1
 MIN_ROUNDS_FOR_RATE = 1
 
 
-def _ensure_dir() -> None:
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+def _connect():
+    return psycopg.connect(DATABASE_URL)
 
 
-def _path(match_id: str) -> Path:
-    return _DATA_DIR / f"{match_id}.json"
+def init_database() -> None:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                create table if not exists namebattle_matches (
+                  id text primary key,
+                  user_id text references users(id) on delete set null,
+                  created_at timestamptz not null,
+                  mode text not null,
+                  protagonist jsonb not null,
+                  antagonist jsonb not null,
+                  rounds jsonb not null,
+                  final_score jsonb not null,
+                  champion text not null,
+                  champion_name text not null,
+                  raw_payload jsonb not null,
+                  updated_at timestamptz not null default now()
+                );
+                """
+            )
+        conn.commit()
+    _seed_from_files()
 
 
-# ---------------------------------------------------------------------------
-# 写入
-# ---------------------------------------------------------------------------
+def _seed_from_files() -> None:
+    if not _DATA_DIR.exists():
+        return
+    for path in _DATA_DIR.glob("*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            _upsert_record(record)
+        except (OSError, json.JSONDecodeError):
+            continue
 
-def save_match(payload: dict[str, Any]) -> str:
-    """保存一场比赛，返回新 id。payload 字段见模块顶部 docstring。"""
-    match_id = uuid.uuid4().hex[:12]
-    created_at = datetime.now().isoformat(timespec="seconds")
 
-    record = {
-        "id": match_id,
+def _record_from_payload(payload: dict[str, Any], match_id: str | None = None) -> dict[str, Any]:
+    record_id = match_id or uuid.uuid4().hex[:12]
+    created_at = payload.get("created_at") or datetime.now().isoformat(timespec="seconds")
+    return {
+        "id": record_id,
         "created_at": created_at,
         "mode": str(payload.get("mode") or "story"),
         "protagonist": payload.get("protagonist") or {},
@@ -65,35 +72,91 @@ def save_match(payload: dict[str, Any]) -> str:
         "champion_name": str(payload.get("champion_name") or ""),
     }
 
-    with _LOCK:
-        _ensure_dir()
-        _path(match_id).write_text(
-            json.dumps(record, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+
+def _upsert_record(record: dict[str, Any], user_id: str | None = None) -> None:
+    rec = _record_from_payload(record, record.get("id") or None)
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into namebattle_matches
+                  (id, user_id, created_at, mode, protagonist, antagonist, rounds, final_score, champion, champion_name, raw_payload)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (id) do update set
+                  user_id = coalesce(excluded.user_id, namebattle_matches.user_id),
+                  created_at = excluded.created_at,
+                  mode = excluded.mode,
+                  protagonist = excluded.protagonist,
+                  antagonist = excluded.antagonist,
+                  rounds = excluded.rounds,
+                  final_score = excluded.final_score,
+                  champion = excluded.champion,
+                  champion_name = excluded.champion_name,
+                  raw_payload = excluded.raw_payload,
+                  updated_at = now()
+                """,
+                (
+                    rec["id"],
+                    user_id,
+                    rec["created_at"],
+                    rec["mode"],
+                    json.dumps(rec["protagonist"], ensure_ascii=False),
+                    json.dumps(rec["antagonist"], ensure_ascii=False),
+                    json.dumps(rec["rounds"], ensure_ascii=False),
+                    json.dumps(rec["final_score"], ensure_ascii=False),
+                    rec["champion"],
+                    rec["champion_name"],
+                    json.dumps(rec, ensure_ascii=False),
+                ),
+            )
+        conn.commit()
+
+
+def save_match(payload: dict[str, Any], user_id: str | None = None) -> str:
+    match_id = uuid.uuid4().hex[:12]
+    _upsert_record(_record_from_payload(payload, match_id), user_id)
     return match_id
 
 
-# ---------------------------------------------------------------------------
-# 读取
-# ---------------------------------------------------------------------------
+def _load_all(user_id: str | None = None) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            if user_id:
+                cur.execute(
+                    """
+                    select id, created_at, mode, protagonist, antagonist, rounds, final_score, champion, champion_name
+                    from namebattle_matches
+                    where user_id = %s
+                    order by created_at desc
+                    """,
+                    (user_id,),
+                )
+            else:
+                cur.execute(
+                    """
+                    select id, created_at, mode, protagonist, antagonist, rounds, final_score, champion, champion_name
+                    from namebattle_matches
+                    order by created_at desc
+                    """
+                )
+            rows = cur.fetchall()
+    return [
+        {
+            "id": row[0],
+            "created_at": row[1].isoformat() if hasattr(row[1], "isoformat") else str(row[1]),
+            "mode": row[2],
+            "protagonist": row[3] or {},
+            "antagonist": row[4] or {},
+            "rounds": row[5] or [],
+            "final_score": row[6] or {"protagonist": 0, "antagonist": 0},
+            "champion": row[7],
+            "champion_name": row[8],
+        }
+        for row in rows
+    ]
 
-def _load_all() -> list[dict[str, Any]]:
-    with _LOCK:
-        files = list(_DATA_DIR.glob("*.json")) if _DATA_DIR.exists() else []
-    out: list[dict[str, Any]] = []
-    for p in files:
-        try:
-            out.append(json.loads(p.read_text(encoding="utf-8")))
-        except (OSError, json.JSONDecodeError):
-            continue
-    return out
 
-
-def list_matches() -> list[dict[str, Any]]:
-    """返回所有比赛概要（按时间倒序）。"""
-    records = _load_all()
-    records.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+def list_matches(user_id: str | None = None) -> list[dict[str, Any]]:
     return [
         {
             "id": r.get("id", ""),
@@ -104,41 +167,58 @@ def list_matches() -> list[dict[str, Any]]:
             "champion_name": r.get("champion_name", ""),
             "final_score": r.get("final_score", {"protagonist": 0, "antagonist": 0}),
         }
-        for r in records
+        for r in _load_all(user_id)
     ]
 
 
-def get_match(match_id: str) -> dict[str, Any] | None:
-    with _LOCK:
-        p = _path(match_id)
-        if not p.exists():
-            return None
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
+def get_match(match_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            if user_id:
+                cur.execute(
+                    """
+                    select id, created_at, mode, protagonist, antagonist, rounds, final_score, champion, champion_name
+                    from namebattle_matches
+                    where id = %s and user_id = %s
+                    """,
+                    (match_id, user_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    select id, created_at, mode, protagonist, antagonist, rounds, final_score, champion, champion_name
+                    from namebattle_matches
+                    where id = %s
+                    """,
+                    (match_id,),
+                )
+            row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "created_at": row[1].isoformat() if hasattr(row[1], "isoformat") else str(row[1]),
+        "mode": row[2],
+        "protagonist": row[3] or {},
+        "antagonist": row[4] or {},
+        "rounds": row[5] or [],
+        "final_score": row[6] or {"protagonist": 0, "antagonist": 0},
+        "champion": row[7],
+        "champion_name": row[8],
+    }
 
 
-def delete_match(match_id: str) -> bool:
-    """删除一场比赛存档。返回是否删除成功。
+def delete_match(match_id: str, user_id: str | None = None) -> bool:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            if user_id:
+                cur.execute("delete from namebattle_matches where id = %s and user_id = %s", (match_id, user_id))
+            else:
+                cur.execute("delete from namebattle_matches where id = %s", (match_id,))
+            deleted = cur.rowcount > 0
+        conn.commit()
+    return deleted
 
-    用于「在前端历史档案里删除某条记录时，同步把后端的存档也删掉」，
-    这样排行榜（基于扫描存档目录聚合）会自动反映出胜率变化。
-    """
-    with _LOCK:
-        p = _path(match_id)
-        if not p.exists():
-            return False
-        try:
-            p.unlink()
-            return True
-        except OSError:
-            return False
-
-
-# ---------------------------------------------------------------------------
-# 排行榜聚合
-# ---------------------------------------------------------------------------
 
 def _empty_stat() -> dict[str, Any]:
     return {
@@ -153,7 +233,7 @@ def _empty_stat() -> dict[str, Any]:
 
 
 def _accumulate(stats: dict[str, dict[str, Any]], rec: dict[str, Any], side: str) -> None:
-    role = (rec.get(side) or {})
+    role = rec.get(side) or {}
     name = (role.get("name") or "").strip()
     if not name:
         return
@@ -166,17 +246,15 @@ def _accumulate(stats: dict[str, dict[str, Any]], rec: dict[str, Any], side: str
     s["matches_played"] += 1
     if rec.get("champion") == side:
         s["matches_won"] += 1
-    for r in rec.get("rounds") or []:
+    for item in rec.get("rounds") or []:
         s["rounds_played"] += 1
-        if r.get("winner") == side:
+        if item.get("winner") == side:
             s["rounds_won"] += 1
 
 
 def _aggregate() -> list[dict[str, Any]]:
-    records = _load_all()
-    records.sort(key=lambda r: r.get("created_at", ""))  # 让 source/summary 取到最新
     stats: dict[str, dict[str, Any]] = defaultdict(_empty_stat)
-    for rec in records:
+    for rec in sorted(_load_all(), key=lambda r: r.get("created_at", "")):
         _accumulate(stats, rec, "protagonist")
         _accumulate(stats, rec, "antagonist")
     return list(stats.values())
@@ -184,18 +262,17 @@ def _aggregate() -> list[dict[str, Any]]:
 
 def _with_rates(stats: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for s in stats:
-        item = dict(s)
-        mp = s["matches_played"]
-        rp = s["rounds_played"]
-        item["match_rate"] = (s["matches_won"] / mp) if mp else 0.0
-        item["round_rate"] = (s["rounds_won"] / rp) if rp else 0.0
+    for stat in stats:
+        item = dict(stat)
+        mp = stat["matches_played"]
+        rp = stat["rounds_played"]
+        item["match_rate"] = (stat["matches_won"] / mp) if mp else 0.0
+        item["round_rate"] = (stat["rounds_won"] / rp) if rp else 0.0
         out.append(item)
     return out
 
 
 def get_leaderboards() -> dict[str, list[dict[str, Any]]]:
-    """返回 4 个榜单：match_rate / round_rate / match_wins / round_wins。"""
     all_stats = _with_rates(_aggregate())
     match_rate = sorted(
         (s for s in all_stats if s["matches_played"] >= MIN_MATCHES_FOR_RATE),
@@ -216,20 +293,15 @@ def get_leaderboards() -> dict[str, list[dict[str, Any]]]:
 
 
 def get_character_profile(name: str) -> dict[str, Any] | None:
-    """返回某角色的简介 + 全部历史对局（对手视角）。无记录返回 None。"""
     name = (name or "").strip()
     if not name:
         return None
-    records = _load_all()
-    if not records:
-        return None
-    records.sort(key=lambda r: r.get("created_at", ""))
 
     matches: list[dict[str, Any]] = []
     source = summary = ""
     mp = mw = rp = rw = 0
 
-    for rec in records:
+    for rec in sorted(_load_all(), key=lambda r: r.get("created_at", "")):
         pro = rec.get("protagonist") or {}
         ant = rec.get("antagonist") or {}
         is_pro = (pro.get("name") or "") == name
@@ -240,20 +312,17 @@ def get_character_profile(name: str) -> dict[str, Any] | None:
         opp_side = "antagonist" if is_pro else "protagonist"
         me = pro if is_pro else ant
         opp = ant if is_pro else pro
-        if me.get("source"):
-            source = me["source"]
-        if me.get("summary"):
-            summary = me["summary"]
+        source = me.get("source") or source
+        summary = me.get("summary") or summary
         final_score = rec.get("final_score") or {}
         won = rec.get("champion") == side
         mp += 1
-        if won:
-            mw += 1
+        mw += 1 if won else 0
         rcnt = rwon = 0
-        for r in rec.get("rounds") or []:
+        for round_item in rec.get("rounds") or []:
             rp += 1
             rcnt += 1
-            if r.get("winner") == side:
+            if round_item.get("winner") == side:
                 rw += 1
                 rwon += 1
         matches.append({
@@ -271,7 +340,7 @@ def get_character_profile(name: str) -> dict[str, Any] | None:
 
     if mp == 0:
         return None
-    matches.sort(key=lambda m: m["created_at"], reverse=True)
+    matches.sort(key=lambda item: item["created_at"], reverse=True)
     return {
         "name": name,
         "source": source,

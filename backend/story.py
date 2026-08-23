@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import anthropic
+import character_gen
 
 
 # ---------------------------------------------------------------------------
@@ -43,16 +44,12 @@ _client_cache: anthropic.Anthropic | None = None
 def _get_client() -> anthropic.Anthropic:
     global _client_cache
     if _client_cache is None:
-        base_url = os.environ.get("ANTHROPIC_BASE_URL") or None
-        kwargs: dict[str, Any] = {"api_key": os.environ["ANTHROPIC_API_KEY"]}
-        if base_url:
-            kwargs["base_url"] = base_url
-        _client_cache = anthropic.Anthropic(**kwargs)
+        _client_cache = character_gen._build_client()
     return _client_cache
 
 
 def _model_name() -> str:
-    return os.environ.get("CLAUDE_MODEL") or "claude-sonnet-4-20250514"
+    return character_gen._model_name()
 
 
 def _extract_tool_input(resp: Any, tool_name: str) -> dict[str, Any]:

@@ -14,9 +14,125 @@ import os
 import json as _json
 import re as _re
 import random
-from typing import Tuple
+from types import SimpleNamespace
+from typing import Any, Tuple
 
 from models import Character, Skill
+
+
+def provider_name() -> str:
+    """Return the active generation provider name used in API responses."""
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "deepseek"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "claude"
+    return "mock"
+
+
+def generation_enabled() -> bool:
+    """Whether a real model provider is configured."""
+    return provider_name() != "mock"
+
+
+def _model_name() -> str:
+    if provider_name() == "deepseek":
+        return os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    return os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+
+
+class _DeepSeekMessagesAdapter:
+    """Expose an Anthropic-like messages.create API backed by DeepSeek Chat Completions."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    @staticmethod
+    def _convert_tools(tools: list[dict] | None) -> list[dict] | None:
+        if not tools:
+            return None
+        converted: list[dict] = []
+        for tool in tools:
+            if tool.get("type") == "web_search_20250305":
+                continue
+            if "input_schema" in tool:
+                converted.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool.get("description", ""),
+                        "parameters": tool["input_schema"],
+                    },
+                })
+            else:
+                converted.append(tool)
+        return converted or None
+
+    @staticmethod
+    def _convert_tool_choice(tool_choice: Any) -> Any:
+        if not isinstance(tool_choice, dict):
+            return tool_choice
+        if tool_choice.get("type") == "tool" and tool_choice.get("name"):
+            return {
+                "type": "function",
+                "function": {"name": tool_choice["name"]},
+            }
+        if tool_choice.get("type") == "auto":
+            return "auto"
+        return tool_choice
+
+    def create(self, **kwargs: Any) -> Any:
+        messages: list[dict[str, Any]] = []
+        system = kwargs.get("system")
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.extend(kwargs.get("messages", []))
+
+        params: dict[str, Any] = {
+            "model": kwargs["model"],
+            "messages": messages,
+            "max_tokens": kwargs.get("max_tokens"),
+        }
+        if kwargs.get("temperature") is not None:
+            params["temperature"] = kwargs["temperature"]
+
+        tools = self._convert_tools(kwargs.get("tools"))
+        if tools:
+            params["tools"] = tools
+            params["tool_choice"] = self._convert_tool_choice(kwargs.get("tool_choice")) or "auto"
+        else:
+            # All no-tool calls in this app are JSON fallback prompts.
+            params["response_format"] = {"type": "json_object"}
+
+        thinking = os.environ.get("DEEPSEEK_THINKING", "disabled").strip().lower()
+        if thinking:
+            params["extra_body"] = {"thinking": {"type": thinking}}
+
+        resp = self._client.chat.completions.create(**params)
+        msg = resp.choices[0].message
+        content_blocks: list[Any] = []
+        for call in getattr(msg, "tool_calls", None) or []:
+            if getattr(call, "type", "") != "function":
+                continue
+            args = getattr(call.function, "arguments", "") or "{}"
+            try:
+                parsed_args = _json.loads(args)
+            except _json.JSONDecodeError:
+                parsed_args = {}
+            content_blocks.append(SimpleNamespace(
+                type="tool_use",
+                name=call.function.name,
+                input=parsed_args,
+            ))
+        if getattr(msg, "content", None):
+            content_blocks.append(SimpleNamespace(type="text", text=msg.content))
+        return SimpleNamespace(content=content_blocks)
+
+
+class _DeepSeekClientAdapter:
+    def __init__(self, *, api_key: str, base_url: str) -> None:
+        from openai import OpenAI
+
+        self.messages = _DeepSeekMessagesAdapter(OpenAI(api_key=api_key, base_url=base_url))
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +212,10 @@ def _create_or_json_fallback(client, *, model, system, user, tool, tool_name, sc
                 inp = getattr(blk, "input", None) or {}
                 if inp:
                     # DeepSeek 经常把嵌套对象序列化成 JSON 字符串 → 先归一化
-                    return _deep_unstringify(inp)
+                    normalized = _deep_unstringify(inp)
+                    required = schema.get("required", [])
+                    if all(k in normalized for k in required):
+                        return normalized
                 break  # input={} → fallback
     except Exception:
         pass
@@ -207,6 +326,13 @@ def _build_client():
     即可把请求发到代理端点。否则走 Anthropic 官方端点。
     注意：代理的 key 必须配代理的 base_url，否则官方端点会返回 403 Forbidden。
     """
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+    if deepseek_key:
+        return _DeepSeekClientAdapter(
+            api_key=deepseek_key,
+            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        )
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
@@ -308,9 +434,9 @@ def generate_with_claude(side_a: str, side_b: str) -> Tuple[Character, Character
     """调用 Claude（联网）生成双方角色。失败时抛异常，由上层决定是否兜底。"""
     client = _build_client()
     if client is None:
-        raise RuntimeError("未配置 ANTHROPIC_API_KEY")
+        raise RuntimeError("未配置模型 API key")
 
-    model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+    model = _model_name()
 
     submit_tool = {
         "name": "submit_characters",
@@ -472,9 +598,9 @@ def generate_hero_with_claude(name: str) -> Tuple[Character, str]:
     """调用 Claude 生成主题贴合的英雄。失败时抛异常，由上层兜底。"""
     client = _build_client()
     if client is None:
-        raise RuntimeError("未配置 ANTHROPIC_API_KEY")
+        raise RuntimeError("未配置模型 API key")
 
-    model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+    model = _model_name()
 
     submit_tool = {
         "name": "submit_hero",

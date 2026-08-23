@@ -17,8 +17,9 @@ import os
 import random
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -52,6 +53,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("battle")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://127.0.0.1:5180")
 
 app = FastAPI(title="名字对战 Demo", version="0.1.0")
 
@@ -67,13 +69,63 @@ app.add_middleware(
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 
+@app.on_event("startup")
+def startup() -> None:
+    match_history.init_database()
+
+
 @app.get("/api/health")
 def health() -> dict:
     """健康检查，并告知当前是否具备联网生成能力。"""
     return {
         "status": "ok",
         "claude_enabled": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "deepseek_enabled": bool(os.environ.get("DEEPSEEK_API_KEY")),
+        "provider": character_gen.provider_name(),
+        "model": character_gen._model_name() if character_gen.generation_enabled() else "",
     }
+
+
+@app.api_route("/api/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@app.api_route("/api/play/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def auth_proxy(path: str, request: Request):
+    prefix = "play" if request.url.path.startswith("/api/play/") else "auth"
+    body = await request.body()
+    headers = {"content-type": request.headers.get("content-type", "application/json")}
+    if request.headers.get("authorization"):
+        headers["authorization"] = request.headers["authorization"]
+    if request.headers.get("cookie"):
+        headers["cookie"] = request.headers["cookie"]
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        proxied = await client.request(
+            request.method,
+            f"{AUTH_SERVICE_URL}/api/{prefix}/{path}",
+            headers=headers,
+            content=body if body else None,
+        )
+
+    response = Response(
+        content=proxied.content,
+        status_code=proxied.status_code,
+        media_type=proxied.headers.get("content-type", "application/json"),
+    )
+    if proxied.headers.get("set-cookie"):
+        response.headers["set-cookie"] = proxied.headers["set-cookie"]
+    return response
+
+
+async def current_user(request: Request) -> dict | None:
+    headers = {}
+    if request.headers.get("authorization"):
+        headers["authorization"] = request.headers["authorization"]
+    if request.headers.get("cookie"):
+        headers["cookie"] = request.headers["cookie"]
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        response = await client.get(f"{AUTH_SERVICE_URL}/api/auth/me", headers=headers)
+    if response.status_code != 200:
+        return None
+    return response.json().get("user")
 
 
 @app.post("/api/battle", response_model=BattleResult)
@@ -87,9 +139,9 @@ def create_battle(req: BattleRequest) -> BattleResult:
     # 优先用 Claude 联网生成；任何失败都降级到 mock，保证 demo 可用
     source = "mock"
     try:
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if character_gen.generation_enabled():
             char_a, char_b, intro = character_gen.generate_with_claude(side_a, side_b)
-            source = "claude"
+            source = character_gen.provider_name()
         else:
             char_a, char_b, intro = character_gen.generate_mock(side_a, side_b)
     except Exception as exc:  # noqa: BLE001 — 任何异常都兜底，避免前端报错
@@ -122,9 +174,9 @@ def adventure_start(req: AdventureStartRequest) -> AdventureStartResponse:
     # 英雄：优先 Claude 主题化生成，失败降级 mock
     hero_source = "mock"
     try:
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if character_gen.generation_enabled():
             hero, hero_intro = character_gen.generate_hero_with_claude(name)
-            hero_source = "claude"
+            hero_source = character_gen.provider_name()
         else:
             hero, hero_intro = character_gen.generate_hero_mock(name)
     except Exception as exc:  # noqa: BLE001 — 任何异常都兜底
@@ -136,7 +188,7 @@ def adventure_start(req: AdventureStartRequest) -> AdventureStartResponse:
     enemies, enemies_intro, enemies_source = adventure.generate_enemies(arena)
 
     # 整体来源：英雄与敌人都来自 Claude 才算 claude，否则视作 mock（提示更诚实）
-    source = "claude" if (hero_source == "claude" and enemies_source == "claude") else "mock"
+    source = hero_source if (hero_source != "mock" and enemies_source == hero_source) else "mock"
     intro = enemies_intro or hero_intro
 
     return AdventureStartResponse(
@@ -283,9 +335,9 @@ def story_generate_characters(req: StoryCharsRequest) -> dict:
         raise HTTPException(status_code=400, detail="双方名字都不能为空")
     source = "mock"
     try:
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if character_gen.generation_enabled():
             pro, ant = story.generate_characters_with_claude(name_a, name_b)
-            source = "claude"
+            source = character_gen.provider_name()
         else:
             pro, ant = story.generate_characters_mock(name_a, name_b)
     except Exception as exc:  # noqa: BLE001
@@ -300,11 +352,11 @@ def story_play_round(req: StoryRoundRequest) -> dict:
     """进行一回合故事对决：Claude 生成解说 + 后端权威推进比分。"""
     source = "mock"
     try:
-        if os.environ.get("ANTHROPIC_API_KEY"):
+        if character_gen.generation_enabled():
             result = story.play_round_with_claude(
                 req.protagonist, req.antagonist, req.round_number, req.score, req.history,
             )
-            source = "claude"
+            source = character_gen.provider_name()
         else:
             result = story.play_round_mock(
                 req.protagonist, req.antagonist, req.round_number, req.score, req.history,
@@ -337,30 +389,34 @@ def story_play_round(req: StoryRoundRequest) -> dict:
 # ===========================================================================
 
 @app.post("/api/matches")
-def save_match_endpoint(req: SaveMatchRequest) -> dict:
+async def save_match_endpoint(req: SaveMatchRequest, request: Request) -> dict:
     """保存一场比赛存档（任一模式都可调用）。"""
-    match_id = match_history.save_match(req.model_dump())
+    user = await current_user(request)
+    match_id = match_history.save_match(req.model_dump(), user.get("id") if user else None)
     return {"id": match_id}
 
 
 @app.get("/api/matches")
-def list_matches_endpoint() -> dict:
-    return {"matches": match_history.list_matches()}
+async def list_matches_endpoint(request: Request) -> dict:
+    user = await current_user(request)
+    return {"matches": match_history.list_matches(user.get("id") if user else None)}
 
 
 @app.get("/api/matches/{match_id}")
-def get_match_endpoint(match_id: str) -> dict:
-    rec = match_history.get_match(match_id)
+async def get_match_endpoint(match_id: str, request: Request) -> dict:
+    user = await current_user(request)
+    rec = match_history.get_match(match_id, user.get("id") if user else None)
     if rec is None:
         raise HTTPException(status_code=404, detail="未找到该比赛记录")
     return rec
 
 
 @app.delete("/api/matches/{match_id}")
-def delete_match_endpoint(match_id: str) -> dict:
+async def delete_match_endpoint(match_id: str, request: Request) -> dict:
     """删除一场比赛存档；用于前端"删除历史"时同步清掉后端存档，
     让排行榜（基于扫描所有存档聚合）自动反映胜率变化。"""
-    ok = match_history.delete_match(match_id)
+    user = await current_user(request)
+    ok = match_history.delete_match(match_id, user.get("id") if user else None)
     if not ok:
         raise HTTPException(status_code=404, detail="未找到该比赛记录")
     return {"deleted": True, "id": match_id}

@@ -5,7 +5,7 @@
   <!-- 移动端优先：禁止缩放，按设备宽度自适应 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0f1020" />
-  <title>compete!</title>
+  <title>Compete！</title>
   <!-- 内联 SVG emoji 图标：避免浏览器请求 /favicon.ico 产生 404 -->
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22&gt;&lt;text y=%22.9em%22 font-size=%2290%22&gt;⚔️&lt;/text&gt;&lt;/svg&gt;" />
   <style>
@@ -1089,6 +1089,10 @@
       position: relative; z-index: 2;
       display: flex; justify-content: space-between; align-items: center;
       padding: 14px 18px 8px;
+      gap: 12px;
+    }
+    .mg-title-wrap {
+      min-width: 0;
     }
     .mg-title {
       font-size: 15px; font-weight: 800; letter-spacing: 3px;
@@ -1096,8 +1100,19 @@
       -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
       filter: drop-shadow(0 0 8px rgba(56,224,255,.55));
     }
+    .mg-subtitle {
+      margin-top: 7px;
+      color: rgba(222,248,255,.94);
+      font-size: 15px;
+      line-height: 1.42;
+      font-weight: 760;
+      letter-spacing: .5px;
+      text-shadow: 0 0 12px rgba(56,224,255,.32);
+    }
+    .mg-subtitle span { display: block; }
     .mg-status {
       font-size: 11px; color: #9fe6ff; letter-spacing: 1px;
+      flex-shrink: 0;
       display: flex; align-items: center; gap: 6px;
     }
     .mg-status .mg-dot {
@@ -1221,6 +1236,58 @@
       border-radius: 10px; cursor: pointer; white-space: nowrap;
     }
     .mg-foot .mg-skip:disabled { opacity: .4; cursor: not-allowed; }
+
+    .mg-back-confirm {
+      position: fixed;
+      inset: 0;
+      z-index: 96;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(2, 8, 20, .68);
+      backdrop-filter: blur(10px);
+    }
+    .mg-back-confirm.open { display: grid; animation: modalFade .18s ease; }
+    .mg-back-card {
+      width: min(380px, 100%);
+      border: 1px solid rgba(80,180,255,.28);
+      border-radius: 18px;
+      padding: 20px;
+      background: linear-gradient(145deg, rgba(11,27,52,.96), rgba(8,14,30,.98));
+      box-shadow: 0 28px 90px rgba(0,0,0,.54), inset 0 1px 0 rgba(255,255,255,.08);
+      color: #eafcff;
+    }
+    .mg-back-card h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 1px;
+    }
+    .mg-back-card p {
+      margin: 0 0 18px;
+      color: rgba(222,248,255,.76);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+    .mg-back-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .mg-back-actions button {
+      min-height: 46px;
+      border: 0;
+      border-radius: 14px;
+      font: inherit;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .mg-back-stay { background: #202b3f; color: #dbefff; }
+    .mg-back-leave {
+      color: #07111f;
+      background: linear-gradient(90deg, #5ce0ff, #9fe6ff);
+      box-shadow: 0 10px 26px rgba(56,224,255,.22);
+    }
 
     /* 结算覆盖层：API 返回后浮在游戏区域上方 */
     .mg-result {
@@ -1682,10 +1749,10 @@
   <div class="splash" id="splash">
     <div class="splash-inner">
       <div class="splash-logo">A R E N A · 跨次元竞技场</div>
-      <div class="splash-title">COMPETE<span class="title-bang">!</span></div>
+      <div class="splash-title">Compete<span class="title-bang">！</span></div>
       <div class="splash-sub">
         让你心中的角色，跨次元一决高下。<br>
-        三种玩法：混沌出击、试炼之塔、乱斗模式。
+        三种玩法：乱斗模式、试炼之塔、混沌出击。
       </div>
       <button class="splash-enter" id="splashEnter">进 入</button>
       <div class="splash-hint">点击进入 · 建议开启音效体验</div>
@@ -1712,18 +1779,18 @@
     </div>
   </div>
 
-  <h1 id="appTitle" class="brand-title">COMPETE<span class="brand-bang">!</span></h1>
-  <div class="subtitle" id="appSubtitle">让你心中的角色，跨次元一决高下</div>
+  <h1 id="appTitle" class="brand-title">Compete<span class="brand-bang">！</span></h1>
+  <div class="subtitle" id="appSubtitle">乱斗模式 · 输入两位虚拟角色，AI 写一场三局两胜的热血解说</div>
 
   <!-- 模式切换 -->
   <div class="mode-switch" id="modeSwitch">
-    <button type="button" data-mode="battle" class="active">⚔️ 混沌出击</button>
+    <button type="button" data-mode="story" class="active">📖 乱斗模式</button>
     <button type="button" data-mode="tower">🗼 试炼之塔</button>
-    <button type="button" data-mode="story">📖 乱斗模式</button>
+    <button type="button" data-mode="battle">⚔️ 混沌出击</button>
   </div>
 
   <!-- ========== 对战模式 ========== -->
-  <div id="battleMode">
+  <div id="battleMode" style="display:none">
     <div class="battle-title">
       <div class="bt-name">⚔️ 混沌出击</div>
       <div class="bt-sub">CHAOS CLASH · AI 联网搜索真实设定 · 数值化自动战斗</div>
@@ -1776,7 +1843,7 @@
   </div>
 
   <!-- ========== 乱斗模式模式（compete! 移植） ========== -->
-  <div id="storyMode" style="display:none">
+  <div id="storyMode">
     <div class="story-title">
       <div class="stl-name">📖 乱斗模式</div>
       <div class="stl-sub">THE STORY DUEL · 三局两胜 · 解说员热血播报</div>
@@ -1924,7 +1991,13 @@
   <!-- ========== 召唤训练场（加载小游戏） ========== -->
   <div class="mg-modal" id="mgModal">
     <div class="mg-head">
-      <div class="mg-title">⚡ 召 唤 训 练 场</div>
+      <div class="mg-title-wrap">
+        <div class="mg-title">⚡ 召 唤 训 练 场</div>
+        <div class="mg-subtitle">
+          <span>正在等待AI返回结果中。。。</span>
+          <span>不妨先玩个小游戏吧？</span>
+        </div>
+      </div>
       <div class="mg-status" id="mgStatus"><span class="mg-dot"></span><span id="mgStatusText">AI 召唤中…</span></div>
     </div>
     <div class="mg-scoreboard">
@@ -1949,6 +2022,17 @@
       <div class="mg-tip" id="mgTip">AI 正在联网生成角色，先来训练手感~</div>
       <button class="mg-skip" id="mgSkip">跳过</button>
     </div>
+  </div>
+
+  <div class="mg-back-confirm" id="mgBackConfirm" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="mgBackTitle">
+    <section class="mg-back-card">
+      <h2 id="mgBackTitle">确定回到主菜单吗？</h2>
+      <p>这样 AI 就白白加载了哦。确认后会取消本次召唤，并回到刚才的玩法界面。</p>
+      <div class="mg-back-actions">
+        <button class="mg-back-stay" id="mgBackStay" type="button">继续等一会</button>
+        <button class="mg-back-leave" id="mgBackLeave" type="button">回到主菜单</button>
+      </div>
+    </section>
   </div>
 
   <!-- 赛尔号风格技能详情卡 -->
@@ -1979,6 +2063,7 @@
     </div>
   </div>
 
+  <script src="/static/nanachi-auth.js"></script>
   <script>
     // 后端接口同源托管，直接用相对路径
     const API = "/api/battle";
@@ -2663,6 +2748,7 @@
         apiResult: null,        // API 返回的数据（成功时）
         apiError: null,         // API 抛的错（失败时）
         apiReady: false,        // API 是否已返回
+        cancelled: false,
       };
 
       const $$ = (id) => document.getElementById(id);
@@ -2831,6 +2917,7 @@
         state.apiReady = false;
         state.apiResult = null;
         state.apiError = null;
+        state.cancelled = false;
         $$("mgScore").textContent = "0";
         $$("mgCombo").textContent = "0";
         $$("mgBest").textContent = String(loadBest());
@@ -2841,6 +2928,7 @@
         $$("mgTip").textContent = tip || "AI 正在联网生成角色，先来训练手感~";
         $$("mgSkip").disabled = false;
         $$("mgModal").classList.add("open");
+        history.pushState({ nameBattleInternal: "mini-game" }, "", location.href);
         startSpawnLoop();
         Sound.unlock();
         return new Promise((resolve, reject) => {
@@ -2851,6 +2939,7 @@
 
       // API 成功返回：显示结算页，等玩家手动进入战斗
       function finishOk(result, opts) {
+        if (state.cancelled) return;
         state.apiReady = true;
         state.apiResult = result;
         state.active = false;
@@ -2881,6 +2970,7 @@
 
       // API 失败：也用结算页提示，但按钮变成「关闭」
       function finishError(err) {
+        if (state.cancelled) return;
         state.apiReady = true;
         state.apiError = err;
         state.active = false;
@@ -2905,6 +2995,8 @@
       function close() {
         state.active = false;
         stopSpawnLoop();
+        $$("mgBackConfirm").classList.remove("open");
+        $$("mgBackConfirm").setAttribute("aria-hidden", "true");
         $$("mgModal").classList.remove("open");
         $$("mgResult").classList.remove("open");
         // 清残留爆裂/飘字
@@ -2916,8 +3008,10 @@
       function confirmEnter() {
         const resolve = state.pendingResolve, reject = state.pendingReject;
         const result = state.apiResult, err = state.apiError, ready = state.apiReady;
+        const shouldPopInternalHistory = history.state?.nameBattleInternal === "mini-game";
         state.pendingResolve = null; state.pendingReject = null;
         close();
+        if (shouldPopInternalHistory) setTimeout(() => history.back(), 0);
         if (!ready) {
           // 玩家点了跳过：让外层等同于"取消"，外层应该自己处理 still-pending 的 API
           if (resolve) resolve({ skipped: true });
@@ -2928,9 +3022,53 @@
         }
       }
 
-      return { show, finishOk, finishError, close, confirmEnter,
+      function cancelFromBack() {
+        const resolve = state.pendingResolve;
+        state.pendingResolve = null;
+        state.pendingReject = null;
+        state.cancelled = true;
+        close();
+        if (resolve) resolve({ cancelled: true });
+      }
+
+      function requestBackCancel() {
+        if (!$$("mgBackConfirm").classList.contains("open")) {
+          $$("mgBackConfirm").classList.add("open");
+          $$("mgBackConfirm").setAttribute("aria-hidden", "false");
+        }
+        history.pushState({ nameBattleInternal: "mini-game-confirm" }, "", location.href);
+      }
+
+      function keepFromBackConfirm() {
+        $$("mgBackConfirm").classList.remove("open");
+        $$("mgBackConfirm").setAttribute("aria-hidden", "true");
+        history.replaceState({ nameBattleInternal: "mini-game" }, "", location.href);
+      }
+
+      function leaveFromBackConfirm() {
+        const shouldPopInternalHistory = Boolean(history.state?.nameBattleInternal);
+        $$("mgBackConfirm").classList.remove("open");
+        $$("mgBackConfirm").setAttribute("aria-hidden", "true");
+        cancelFromBack();
+        if (shouldPopInternalHistory) setTimeout(() => history.back(), 0);
+      }
+
+      return {
+        show,
+        finishOk,
+        finishError,
+        close,
+        confirmEnter,
+        cancelFromBack,
+        requestBackCancel,
+        keepFromBackConfirm,
+        leaveFromBackConfirm,
         get isOpen() { return state.active || $$("mgModal").classList.contains("open"); } };
     })();
+
+    window.addEventListener("popstate", () => {
+      if (MiniGame.isOpen) MiniGame.requestBackCancel();
+    });
 
     // 训练场按钮：进入战斗 / 跳过（脚本在 body 末尾，DOM 已就绪可直接绑）
     $("mrEnter").addEventListener("click", () => MiniGame.confirmEnter());
@@ -2938,6 +3076,8 @@
       // 跳过：直接关闭，不等结算；API 仍在飞，外层负责把它丢掉
       MiniGame.confirmEnter();
     });
+    $("mgBackStay").addEventListener("click", () => MiniGame.keepFromBackConfirm());
+    $("mgBackLeave").addEventListener("click", () => MiniGame.leaveFromBackConfirm());
 
     /* ------------------------------------------------------------------ *
      * 视觉特效：刀光、扬尘、冲击波、飘动伤害数字。挂在角色面板的 .fx 层上。
@@ -3484,11 +3624,12 @@
 
       try {
         const outcome = await gamePromise;     // 玩家点「进入战斗」或「跳过」后才推进
+        if (outcome.cancelled) { $("status").textContent = ""; return; }
         // 跳过：API 可能还在飞，再等一下
         const r = outcome.skipped ? await apiPromise : outcome.result;
         lastResult = r;
 
-        const sourceTip = r.source === "claude" ? "联网生成" : "模拟模式(未配置密钥)";
+        const sourceTip = r.source === "mock" ? "模拟模式(未配置密钥)" : `${r.source || "AI"} 生成`;
         $("status").innerHTML = `角色已就绪 <span class="badge">${sourceTip}</span>`;
         $("arena").style.display = "block";
         initFighters(r);
@@ -3593,6 +3734,7 @@
 
       try {
         const outcome = await gamePromise;
+        if (outcome.cancelled) { $("status").textContent = ""; return; }
         const data = outcome.skipped ? await apiPromise : outcome.result;
 
         towerState.hero = data.hero;
@@ -3604,7 +3746,7 @@
         // 保留一份未强化的原始英雄拷贝，"重闯"功能用
         towerState.originHero = JSON.parse(JSON.stringify(data.hero));
 
-        const sourceTip = data.source === "claude" ? "联网生成" : "模拟模式";
+        const sourceTip = data.source === "mock" ? "模拟模式" : `${data.source || "AI"} 生成`;
         $("status").innerHTML = `${data.intro || ""} <span class="badge">${sourceTip}</span>`;
 
         // 入历史：记录这次开局的"原始英雄 + 三层敌人 + 场地"
@@ -4006,7 +4148,7 @@
       // 离开故事模式时停止 BGM（在故事/对战中开过的不希望串到输入页）
       if (!story && !battle && !tower) BGM.stop();
 
-      // 顶部 H1 保持为 COMPETE! 品牌，不再随模式变化；只更新副标题
+      // 顶部 H1 保持为 Compete！品牌，不再随模式变化；只更新副标题
       const subs = {
         battle: "混沌出击 · 输入两个名字，AI 联网生成角色并自动开战",
         tower:  "试炼之塔 · 输入勇者之名与挑战场地，连闯三层试炼",
@@ -4287,6 +4429,7 @@
 
       try {
         const outcome = await gamePromise;
+        if (outcome.cancelled) { $("status").textContent = ""; return; }
         const data = outcome.skipped ? await apiPromise : outcome.result;
         resetStoryState();
         storyState.pro = data.protagonist;
@@ -4294,7 +4437,7 @@
         $("storyInputCard").style.display = "none";
         $("storyArena").style.display = "block";
         renderStoryArena();
-        $("status").innerHTML = `角色已就绪 <span class="badge">${data.source === "claude" ? "联网生成" : "模拟模式"}</span>`;
+        $("status").innerHTML = `角色已就绪 <span class="badge">${data.source === "mock" ? "模拟模式" : `${data.source || "AI"} 生成`}</span>`;
         // 进入战斗，按当前音频开关状态启动 BGM（关了就不放）
         if (audioOn) BGM.start($("bgmSelect").value);
       } catch (e) {
@@ -4547,8 +4690,18 @@
       Sound.unlock();
       BGM.setTrack($("bgmSelect").value);   // 立即换曲（若正在播）
     });
-    // 默认选第一首；audioOn=true 但 BGM 不自动播放 — 等用户进入战斗 / 点开关才开
+    function startAudioOnFirstGesture() {
+      if (!audioOn || BGM.isPlaying) return;
+      Sound.unlock();
+      applyAudioState();
+    }
+
+    // 默认选第一首；进入页面即尝试播放。若浏览器拦截，则在第一次用户手势后自动播放。
     $("bgmSelect").value = "blaze";
+    applyAudioState();
+    for (const eventName of ["pointerdown", "keydown", "touchstart"]) {
+      window.addEventListener(eventName, startAudioOnFirstGesture, { once: true, passive: true });
+    }
 
     // 顶部 top-bar 长期可见（之前的滚动隐藏/拉出条逻辑已移除）
 

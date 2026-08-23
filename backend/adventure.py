@@ -196,9 +196,9 @@ def generate_enemies_with_claude(arena: str) -> Tuple[List[Character], str]:
     """调用 Claude 按场地生成三层敌人。失败时抛异常，由上层兜底。"""
     client = character_gen._build_client()
     if client is None:
-        raise RuntimeError("未配置 ANTHROPIC_API_KEY")
+        raise RuntimeError("未配置模型 API key")
 
-    model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+    model = character_gen._model_name()
     submit_tool = {
         "name": "submit_enemies",
         "description": "提交围绕挑战场地设计好的三层敌人（结构化）。",
@@ -266,10 +266,10 @@ def generate_enemies(arena: str) -> Tuple[List[Character], str, str]:
     返回 (enemies, intro, source)，source 为 'claude' 或 'mock'。
     """
     arena = (arena or "").strip()
-    if os.environ.get("ANTHROPIC_API_KEY") and arena:
+    if character_gen.generation_enabled() and arena:
         try:
             enemies, intro = generate_enemies_with_claude(arena)
-            return enemies, intro, "claude"
+            return enemies, intro, character_gen.provider_name()
         except Exception:  # noqa: BLE001 — 任何失败都兜底
             pass
     enemies = generate_enemies_mock(arena)
