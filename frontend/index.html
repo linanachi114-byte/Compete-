@@ -6,6 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0f1020" />
   <title>Compete！</title>
+  <meta name="description" content="输入两个名字，让 AI 查询角色、生成技能，并写出一场跨次元对决。" />
+  <link rel="canonical" href="https://battle.lijiaqi.me/" />
+  <meta property="og:type" content="website" /><meta property="og:title" content="Compete！" /><meta property="og:description" content="谁说关公不能战秦琼？把两个名字扔进 AI 擂台。" /><meta property="og:url" content="https://battle.lijiaqi.me/" /><meta property="og:image" content="https://battle.lijiaqi.me/nanachi-project-logo.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Game","name":"Compete！","url":"https://battle.lijiaqi.me/","description":"AI 跨次元名字对战游戏","applicationCategory":"Game"}</script>
   <!-- 内联 SVG emoji 图标：避免浏览器请求 /favicon.ico 产生 404 -->
   <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22&gt;&lt;text y=%22.9em%22 font-size=%2290%22&gt;⚔️&lt;/text&gt;&lt;/svg&gt;" />
   <style>
@@ -1751,11 +1756,11 @@
       <div class="splash-logo">A R E N A · 跨次元竞技场</div>
       <div class="splash-title">Compete<span class="title-bang">！</span></div>
       <div class="splash-sub">
-        让你心中的角色，跨次元一决高下。<br>
-        三种玩法：乱斗模式、试炼之塔、混沌出击。
+        把两个名字扔进擂台，AI 会查清他们是谁，<br>
+        再写出一场三局两胜的跨次元乱斗。
       </div>
-      <button class="splash-enter" id="splashEnter">进 入</button>
-      <div class="splash-hint">点击进入 · 建议开启音效体验</div>
+      <button class="splash-enter" id="splashEnter">立即开启乱斗</button>
+      <div class="splash-hint">输入两位角色即可开战 · 首次操作后开启音效</div>
     </div>
   </div>
 
@@ -1797,12 +1802,12 @@
     </div>
     <div class="input-card" id="inputCard">
       <div class="field a">
-        <label>正方名字</label>
+        <label for="sideA">正方名字</label>
         <input id="sideA" type="text" placeholder="例如：孙悟空" maxlength="50" />
       </div>
       <div class="vs-mark">VS</div>
       <div class="field b">
-        <label>反方名字</label>
+        <label for="sideB">反方名字</label>
         <input id="sideB" type="text" placeholder="例如：奥特曼" maxlength="50" />
       </div>
       <div class="dice-roll">
@@ -1821,11 +1826,11 @@
     </div>
     <div class="input-card tower-input-card" id="towerInputCard">
       <div class="field h">
-        <label>勇者之名</label>
+        <label for="heroName">勇者之名</label>
         <input id="heroName" type="text" placeholder="例如：孙悟空" maxlength="50" />
       </div>
       <div class="field h">
-        <label>挑战场地（敌人将围绕它生成）</label>
+        <label for="arenaName">挑战场地（敌人将围绕它生成）</label>
         <input id="arenaName" type="text" placeholder="例如：熔岩深渊 / 霓虹赛博都市 / 武侠江湖" maxlength="50" />
       </div>
       <div class="dice-roll">
@@ -1850,12 +1855,12 @@
     </div>
     <div class="input-card" id="storyInputCard">
       <div class="field a">
-        <label>正方角色</label>
+        <label for="storyA">正方角色</label>
         <input id="storyA" type="text" placeholder="例如：齐木楠雄" maxlength="50" />
       </div>
       <div class="vs-mark">VS</div>
       <div class="field b">
-        <label>反方角色</label>
+        <label for="storyB">反方角色</label>
         <input id="storyB" type="text" placeholder="例如：皮卡丘" maxlength="50" />
       </div>
       <div class="dice-roll">
@@ -2063,6 +2068,7 @@
     </div>
   </div>
 
+  <script src="/static/nanachi-game-shell.js"></script>
   <script src="/static/nanachi-auth.js"></script>
   <script>
     // 后端接口同源托管，直接用相对路径
@@ -3588,6 +3594,7 @@
       persistBattleMatch(r).then((backendId) => {
         if (backendId) updateHistory(localId, { backendId });
       });
+      window.NanachiGameShell?.record("core_complete", "name-battle", { success: true, metadata: { mode: "battle" } });
       return r.winner;
     }
 
@@ -3598,6 +3605,7 @@
         $("status").textContent = "请填写双方名字";
         return;
       }
+      window.NanachiGameShell?.record("core_start", "name-battle", { metadata: { mode: "battle" } });
       $("start").disabled = true;
       $("status").textContent = "正在召唤双方角色…";
 
@@ -4113,6 +4121,8 @@
     $("splashEnter").addEventListener("click", () => {
       Sound.unlock();
       $("splash").classList.add("hide");
+      switchMode("story");
+      window.setTimeout(() => $("storyA").focus(), 240);
     });
 
     /* ------------------ 模式切换 ------------------ */
@@ -4402,6 +4412,7 @@
       const a = $("storyA").value.trim();
       const b = $("storyB").value.trim();
       if (!a || !b) { $("status").textContent = "请填写双方角色名"; return; }
+      window.NanachiGameShell?.record("core_start", "name-battle", { metadata: { mode: "story" } });
       $("storyStart").disabled = true;
       $("status").textContent = "正在召唤双方角色…";
 
@@ -4514,6 +4525,7 @@
           $("storyToLb").hidden = false;
           $("storyRestart").hidden = false;
           persistStoryMatch();   // 入库后排行榜就能查到
+          window.NanachiGameShell?.record("core_complete", "name-battle", { success: true, metadata: { mode: "story" } });
           refreshHistoryBadge();
         } else {
           btn.disabled = false;
@@ -4696,9 +4708,10 @@
       applyAudioState();
     }
 
-    // 默认选第一首；进入页面即尝试播放。若浏览器拦截，则在第一次用户手势后自动播放。
+    // 默认选第一首；浏览器收到第一次真实用户手势后才创建并播放音频。
     $("bgmSelect").value = "blaze";
-    applyAudioState();
+    $("audioToggle").textContent = "🎵";
+    $("audioBar").classList.remove("muted");
     for (const eventName of ["pointerdown", "keydown", "touchstart"]) {
       window.addEventListener(eventName, startAudioOnFirstGesture, { once: true, passive: true });
     }

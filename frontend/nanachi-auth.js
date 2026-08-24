@@ -1,43 +1,21 @@
 (function () {
   const PROJECT_ID = "name-battle";
-  const TOKEN_KEY = "nanachi-game-auth-token";
   const RETURN_TO_KEY = `nanachi-${PROJECT_ID}-return-to`;
   const params = new URLSearchParams(window.location.search);
-  const incomingToken = params.get("authToken");
   const incomingReturnTo = params.get("returnTo");
-  const requireLogin = params.get("requireLogin") === "1";
 
-  if (requireLogin && !incomingToken) {
-    localStorage.removeItem(TOKEN_KEY);
-  }
 
-  let token = incomingToken || localStorage.getItem(TOKEN_KEY) || "";
   let sessionId = "";
   let trackingStarted = false;
   let currentUser = null;
 
   const nativeFetch = window.fetch.bind(window);
-  window.fetch = (input, init = {}) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    if (token && url.startsWith("/api/")) {
-      init = {
-        ...init,
-        headers: {
-          ...(init.headers || {}),
-          Authorization: `Bearer ${token}`,
-        },
-      };
-    }
-    return nativeFetch(input, init);
-  };
 
-  if (incomingToken) {
-    localStorage.setItem(TOKEN_KEY, incomingToken);
-  }
   if (incomingReturnTo) {
     localStorage.setItem(RETURN_TO_KEY, incomingReturnTo);
   }
-  if (incomingToken || incomingReturnTo || requireLogin) {
+  localStorage.removeItem("nanachi-game-auth-token");
+  if (incomingReturnTo || params.has("authToken") || params.has("requireLogin")) {
     params.delete("authToken");
     params.delete("returnTo");
     params.delete("requireLogin");
@@ -49,21 +27,25 @@
     const storedReturnTo = localStorage.getItem(RETURN_TO_KEY) || incomingReturnTo || "";
     if (storedReturnTo) {
       try {
-        return new URL(storedReturnTo).origin;
+        const target = new URL(storedReturnTo);
+        const local = ["localhost", "127.0.0.1", "::1"].includes(target.hostname);
+        if (local || target.hostname === "lijiaqi.me") return target.origin;
       } catch {
         // Fall through to the default launcher port.
       }
     }
-    return `${window.location.protocol}//${window.location.hostname}:5175`;
+    const hostname = window.location.hostname;
+    const isLocal = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+    return isLocal ? `${window.location.protocol}//${hostname}:5175` : "https://lijiaqi.me";
   }
 
   async function requestApi(path, options = {}) {
-    const response = await nativeFetch(path, {
+    const request = window.NanachiGameShell?.request || nativeFetch;
+    const response = await request(path, {
       credentials: "include",
       ...options,
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers || {}),
       },
     });
@@ -73,7 +55,6 @@
       error.status = response.status;
       throw error;
     }
-    if (!response.ok) throw new Error(payload.message || payload.error || "请求失败");
     return payload;
   }
 
@@ -133,7 +114,6 @@
       keepalive: true,
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ sessionId }),
     }).catch(() => undefined);
@@ -315,11 +295,9 @@
           method: "POST",
           body: JSON.stringify(data),
         });
-        token = result.token || token;
         currentUser = result.user || null;
-        if (token) localStorage.setItem(TOKEN_KEY, token);
         gate.classList.remove("show");
-        window.dispatchEvent(new CustomEvent("nanachi-authenticated", { detail: { user: result.user, token } }));
+        window.dispatchEvent(new CustomEvent("nanachi-authenticated", { detail: { user: result.user } }));
         updateGuestLoginHint();
         await startTracking();
       } catch (err) {
@@ -348,7 +326,7 @@
     if (document.getElementById("nanachi-login-hint")) return;
     const style = document.createElement("style");
     style.textContent = `
-      .nanachi-login-hint{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:9996;border:0;border-radius:999px;padding:10px 13px;background:rgba(18,24,20,.88);color:#fff;font:inherit;font-size:13px;font-weight:900;box-shadow:0 10px 30px rgba(0,0,0,.26);backdrop-filter:blur(10px);cursor:pointer}
+      .nanachi-login-hint{position:fixed;right:max(10px,env(safe-area-inset-right,0px));top:max(10px,env(safe-area-inset-top,0px));z-index:9996;border:1px solid rgba(255,255,255,.3);border-radius:14px;width:44px;height:44px;padding:0;background:rgba(18,24,20,.88);color:#fff;font:inherit;font-size:13px;font-weight:900;box-shadow:0 10px 30px rgba(0,0,0,.26);backdrop-filter:blur(10px);cursor:pointer}
       .nanachi-login-hint[hidden]{display:none}
     `;
     document.head.appendChild(style);
@@ -356,7 +334,9 @@
     button.id = "nanachi-login-hint";
     button.className = "nanachi-login-hint";
     button.type = "button";
-    button.textContent = "登录同步";
+    button.textContent = "登录";
+    button.setAttribute("aria-label", "登录后同步进度");
+    button.title = "登录后同步进度";
     button.addEventListener("click", showAuthGate);
     document.body.appendChild(button);
   }
@@ -367,34 +347,32 @@
   }
   async function bootstrapAuth() {
     installAuthGate();
-    if (!token) {
-      currentUser = null;
-      window.dispatchEvent(new CustomEvent("nanachi-auth-ready", { detail: { user: null, token: "" } }));
-      updateGuestLoginHint();
-      return;
-    }
     try {
       const me = await api("/api/auth/me");
       if (me.user) {
         currentUser = me.user;
         hideAuthGate();
-        window.dispatchEvent(new CustomEvent("nanachi-authenticated", { detail: { user: me.user, token } }));
+        window.dispatchEvent(new CustomEvent("nanachi-authenticated", { detail: { user: me.user } }));
         updateGuestLoginHint();
         await startTracking();
         return;
       }
     } catch {
-      token = "";
       currentUser = null;
-      localStorage.removeItem(TOKEN_KEY);
     }
-    window.dispatchEvent(new CustomEvent("nanachi-auth-ready", { detail: { user: null, token: "" } }));
+    window.dispatchEvent(new CustomEvent("nanachi-auth-ready", { detail: { user: null } }));
     updateGuestLoginHint();
   }
 
   function launcherUrl() {
     const saved = localStorage.getItem(RETURN_TO_KEY);
-    if (saved) return saved;
+    if (saved) {
+      try {
+        const target = new URL(saved);
+        const local = ["localhost", "127.0.0.1", "::1"].includes(target.hostname);
+        if (local || target.hostname === "lijiaqi.me") return target.href;
+      } catch {}
+    }
     if (document.referrer) {
       try {
         const referrer = new URL(document.referrer);
@@ -484,6 +462,7 @@
   }
 
   function start() {
+    window.NanachiGameShell?.record("project_open", PROJECT_ID);
     installGameCenterBackGuard();
     installGuestLoginHint();
     updateGuestLoginHint();    void bootstrapAuth();
