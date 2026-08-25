@@ -406,11 +406,11 @@
     overlay.className = "nanachi-exit-overlay";
     overlay.innerHTML = `
       <section class="nanachi-exit-dialog" role="dialog" aria-modal="true" aria-labelledby="nanachi-exit-title">
-        <h2 id="nanachi-exit-title">是否回到游戏中心？</h2>
-        <p>当前对战会话将结束，游玩时长会保存到记录。</p>
+        <h2 id="nanachi-exit-title">确定回到房间吗？</h2>
+        <p>如果您尚未登录，在当前游戏中的进度将不会保存。</p>
         <div class="nanachi-exit-actions">
           <button class="nanachi-exit-cancel" type="button">留在游戏</button>
-          <button class="nanachi-exit-ok" type="button">回到游戏中心</button>
+          <button class="nanachi-exit-ok" type="button">回到房间</button>
         </div>
       </section>
     `;
