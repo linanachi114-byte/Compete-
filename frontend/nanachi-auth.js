@@ -126,7 +126,8 @@
     style.textContent = `
       .nanachi-auth-gate{position:fixed;inset:0;z-index:9997;display:none;align-items:center;justify-content:center;padding:22px;background:rgba(4,7,13,.76);backdrop-filter:blur(12px);font-family:inherit}
       .nanachi-auth-gate.show{display:flex}
-      .nanachi-auth-panel{width:min(400px,100%);border-radius:20px;border:1px solid rgba(116,174,255,.26);background:linear-gradient(145deg,#101826,#17111f);box-shadow:0 30px 90px rgba(0,0,0,.55);padding:22px;color:#f4f7ff}
+      .nanachi-auth-panel{position:relative;width:min(400px,100%);border-radius:20px;border:1px solid rgba(116,174,255,.26);background:linear-gradient(145deg,#101826,#17111f);box-shadow:0 30px 90px rgba(0,0,0,.55);padding:22px;color:#f4f7ff}
+      .nanachi-auth-close{position:absolute;right:13px;top:13px;width:38px;height:38px;border:1px solid rgba(116,174,255,.34);border-radius:12px;display:grid;place-items:center;background:rgba(9,15,26,.72);color:inherit;font:inherit;font-size:26px;font-weight:900;line-height:1;cursor:pointer}
       .nanachi-auth-head{display:flex;gap:14px;align-items:center;margin-bottom:18px}
       .nanachi-auth-mark{width:58px;height:58px;border-radius:16px;display:grid;place-items:center;background:#111827;box-shadow:0 12px 28px rgba(111,140,255,.25);overflow:hidden}
       .nanachi-auth-mark img{width:100%;height:100%;display:block;object-fit:cover}
@@ -165,6 +166,7 @@
     gate.dataset.mode = "login";
     gate.innerHTML = `
       <section class="nanachi-auth-panel" role="dialog" aria-modal="true" aria-labelledby="nanachi-auth-title">
+        <button type="button" class="nanachi-auth-close" aria-label="返回游戏" title="返回游戏">×</button>
         <div class="nanachi-auth-head">
           <div class="nanachi-auth-mark"><img src="/static/nanachi-project-logo.png" alt="Compete!" /></div>
           <div>
@@ -190,6 +192,7 @@
       </section>
     `;
     document.body.appendChild(gate);
+    gate.querySelector(".nanachi-auth-close")?.addEventListener("click", hideAuthGate);
 
     const title = gate.querySelector("#nanachi-auth-title");
     const form = gate.querySelector(".nanachi-auth-form");
