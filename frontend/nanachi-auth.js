@@ -329,19 +329,21 @@
     if (document.getElementById("nanachi-login-hint")) return;
     const style = document.createElement("style");
     style.textContent = `
-      .nanachi-login-hint{position:fixed;right:max(10px,env(safe-area-inset-right,0px));top:max(10px,env(safe-area-inset-top,0px));z-index:9996;border:1px solid rgba(255,255,255,.3);border-radius:14px;width:44px;height:44px;padding:0;background:rgba(18,24,20,.88);color:#fff;font:inherit;font-size:13px;font-weight:900;box-shadow:0 10px 30px rgba(0,0,0,.26);backdrop-filter:blur(10px);cursor:pointer}
+      .nanachi-login-hint{display:flex;align-items:center;gap:8px;min-width:152px;height:44px;padding:5px 10px;border:1px solid rgba(56,224,255,.55);border-radius:11px;background:rgba(6,22,42,.9);color:#eafcff;font:inherit;text-align:left;box-shadow:0 0 18px rgba(56,224,255,.12);cursor:pointer}
+      .nanachi-login-hint svg{width:24px;height:24px;flex:0 0 auto;fill:none;stroke:#38e0ff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.nanachi-login-hint span{display:grid;gap:1px;line-height:1.1}.nanachi-login-hint strong{font-size:12px}.nanachi-login-hint small{color:#7fa6cc;font-size:8px;font-weight:700;white-space:nowrap}
       .nanachi-login-hint[hidden]{display:none}
+      @media(max-width:480px){.nanachi-login-hint{min-width:0;width:40px;padding:7px}.nanachi-login-hint span{display:none}.nanachi-login-hint svg{width:23px;height:23px}}
     `;
     document.head.appendChild(style);
     const button = document.createElement("button");
     button.id = "nanachi-login-hint";
     button.className = "nanachi-login-hint";
     button.type = "button";
-    button.textContent = "登录";
+    button.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg><span><strong>游客模式</strong><small>登录后同步进度</small></span>';
     button.setAttribute("aria-label", "登录后同步进度");
     button.title = "登录后同步进度";
     button.addEventListener("click", showAuthGate);
-    document.body.appendChild(button);
+    (document.getElementById("nanachiAuthSlot") || document.body).appendChild(button);
   }
 
   function updateGuestLoginHint() {
