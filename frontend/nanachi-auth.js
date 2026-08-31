@@ -157,6 +157,10 @@
       .nanachi-auth-send-sms{border:0;border-radius:14px;background:#6f8cff;color:#fff;font:inherit;font-size:13px;font-weight:900;cursor:pointer}
       .nanachi-auth-send-sms:disabled{opacity:.58;cursor:not-allowed}
       .nanachi-auth-note{min-height:20px;color:#8ea1ff;font-size:13px;font-weight:800}
+      @media(max-width:560px),(max-height:760px){
+        .nanachi-auth-gate{align-items:flex-start;padding:8px;overflow-y:auto}.nanachi-auth-panel{width:100%;max-height:calc(100dvh - 16px);overflow-y:auto;padding:13px 14px;border-radius:16px}.nanachi-auth-close{top:8px;right:8px;width:32px;height:32px;border-radius:10px;font-size:22px}.nanachi-auth-head{gap:9px;margin-bottom:8px;padding-right:28px}.nanachi-auth-mark{width:42px;height:42px;border-radius:13px}.nanachi-auth-head h2{margin-bottom:2px;font-size:19px}.nanachi-auth-head p{font-size:12px;line-height:1.35}.nanachi-auth-tabs{gap:4px;margin-bottom:7px;padding:3px;border-radius:11px}.nanachi-auth-tabs button{min-height:36px;border-radius:9px}
+        .nanachi-auth-form{gap:6px}.nanachi-auth-form label{gap:3px;font-size:12px}.nanachi-auth-form input{min-height:40px;padding:8px 10px;font-size:16px;border-radius:11px}.nanachi-auth-password-toggle{width:30px;height:30px}.nanachi-auth-sms-row{grid-template-columns:1fr 100px;gap:6px}.nanachi-auth-send-sms{min-height:40px;border-radius:11px;font-size:12px}.nanachi-auth-submit{min-height:42px;border-radius:11px;font-size:15px}.nanachi-auth-error,.nanachi-auth-note{min-height:0;font-size:11px;line-height:1.25}
+      }
     `;
     document.head.appendChild(style);
 
