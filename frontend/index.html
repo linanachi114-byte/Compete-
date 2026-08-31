@@ -319,16 +319,14 @@
      * 始终 position:fixed + z-index 高于内容，避免被弹窗遮。
      */
     .top-bar {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 20;
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 8px;
-      padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+      position: fixed; top: 0; left: 50%; z-index: 20;
+      display: flex; align-items: center; justify-content: center;
+      width: min(540px, 100%); transform: translateX(-50%);
+      padding: calc(env(safe-area-inset-top) + 8px) 14px 8px;
       pointer-events: none;     /* 让中间空白处的滚动/点击穿透到下层 */
-      transition: transform .26s ease, opacity .26s ease;
-      will-change: transform;
     }
     .top-bar > * { pointer-events: auto; }
-    .top-bar-right { display: flex; align-items: center; gap: 6px; }
+    .top-bar-controls { display: flex; align-items: center; gap: 6px; }
 
     /* 历史按钮（top-bar 子元素） */
     .history-toggle {
@@ -1766,8 +1764,9 @@
 
   <!-- 顶部按钮栏（长期可见） -->
   <div class="top-bar" id="topBar">
-    <button class="lb-toggle" id="lbToggle" title="排行榜">🏆</button>
-    <div class="top-bar-right">
+    <div class="top-bar-controls">
+      <button class="lb-toggle" id="lbToggle" title="排行榜">🏆</button>
+      <span id="guestLoginSlot" class="guest-login-slot"></span>
       <!-- 音频开关：一键管 SFX + BGM，不分别。点击切换"全开/全关"。
            BGM 选曲 dropdown 不再有"关闭"选项 — 想关声音请点喇叭图标。 -->
       <div class="audio-bar" id="audioBar">
@@ -2069,8 +2068,17 @@
   </div>
 
   <script src="/static/nanachi-game-shell.js"></script>
-  <script src="/static/nanachi-auth.js"></script>
+  <script src="/static/nanachi-auth.js?v=20260831-2"></script>
   <script>
+    function mountGuestLoginHint() {
+      const hint = document.getElementById("nanachi-login-hint");
+      const slot = document.getElementById("guestLoginSlot");
+      if (hint && slot) slot.appendChild(hint);
+    }
+    mountGuestLoginHint();
+    window.addEventListener("nanachi-auth-ready", mountGuestLoginHint);
+    window.addEventListener("nanachi-authenticated", mountGuestLoginHint);
+
     // 后端接口同源托管，直接用相对路径
     const API = "/api/battle";
 
